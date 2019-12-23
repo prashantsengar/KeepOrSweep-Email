@@ -1,5 +1,7 @@
 import logging
 import os 
+import threading
+import imaplib
 
 import re
 from kivy.app import App
@@ -19,12 +21,9 @@ class LoginScreen(FloatLayout):
 
 	def __init__(self, **kwargs):
 		super(LoginScreen, self).__init__(**kwargs)
+		self.initialize_login_screen()
 
-		logging.info(os.getcwd())
-		logging.info(os.listdir())
-
-		logging.info(os.listdir('./images'))
-
+	def initialize_login_screen(self):
 		self.logo_path = './images/icon-256.png'
 		self.logo = Image(source=self.logo_path)
 
@@ -35,7 +34,6 @@ class LoginScreen(FloatLayout):
 		self.data_layout.cols = 2
 		self.data_layout.add_widget(Label(text='Email address: '))
 		self.data_layout.email = TextInput(multiline=False)
-		self.data_layout.email.bind(on_text_validate=self.validate_email)
 
 		self.data_layout.add_widget(self.data_layout.email)
 		self.data_layout.add_widget(Label(text='Password: '))
@@ -44,37 +42,63 @@ class LoginScreen(FloatLayout):
 
 		self.layout.add_widget(self.data_layout)
 
-		submit_buttom = Button(text='Sign In', on_press=self.sign_in)
+		submit_buttom = Button(text='Sign In', on_press=self.on_sign_in)
 		self.layout.add_widget(submit_buttom)
 
 		self.add_widget(self.layout)
 
+	def clear_screen(self):
+		self.remove_widget(self.layout)
 
-	def sign_in(self, instance):
-		if self.validate_email(self.data_layout.email):
-			self.email = self.data_layout.email.text
-			self.password = self.data_layout.password.text
-			logging.info(self.email)
-			logging.info(self.password)
+	def show_loading(self):
+		self.clear_screen()
+		self.loading_image = Image(source='./images/loading.gif')
+		self.layout = BoxLayout()
+		self.layout.add_widget(self.loading_image)
+		self.add_widget(self.layout)
+
+
+	def on_sign_in(self, instance):
+		if is_email(self.data_layout.email.text):
+			email = self.data_layout.email.text
+			password = self.data_layout.password.text
+			self.show_loading()
+			sign_in_thread = threading.Thread(target=sign_in_util, args=(self, email, password,))
+			sign_in_thread.start()
+
+			logging.info(email)
+			logging.info(password)
+		else:
+			self.clear_screen()
+			self.initialize_login_screen()
+			self.show_error('Invalid email. Try again')
+
 
 	def show_error(self, msg):
+		self.clear_screen()
+		self.initialize_login_screen()
 		error_layout = BoxLayout(orientation='vertical')
 		error_msg_label = Label(text=msg)
 		error_layout.add_widget(error_msg_label)
 		self.layout.add_widget(error_layout)
 
 
-	def validate_email(self, instance):
-		logging.info(instance.text)
 
-		if is_email(instance.text):
-			logging.info('Is an email')
-			return True
-		logging.info('Not an email')
-		self.show_error('Invalid email. Try again')
-		return False
+def sign_in_util(instance, email, password):
+	server = imaplib.IMAP4_SSL('imap.gmail.com', 993)
+	try:
+		server.login(email, password)
+	except imaplib.IMAP4.error as e:
+		logging.error(e)
+		# logging.error(e.__str__)
+		instance.show_error('Invalid email/password combination. Try again')
+		return
+	server.select('Inbox')
+	typ, data = server.search(None, 'ALL')
+	for i in range(5):
+		print(data[i])
 
-
+	
 def is_email(text):
 	'''
 	Uses Regex to verify that the text is an email address
